@@ -1,0 +1,13 @@
+.DS_Store
+node_modules/
+npm-debug.log*
+
+# local state/workspace (Render disk mount is /data in production)
+.clawdbot/
+workspace/
+data/
+
+# editor/system
+.env
+.idea/
+.vscode/

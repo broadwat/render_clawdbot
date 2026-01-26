@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: render-clawdbot
+    runtime: docker
+    plan: standard
+    region: oregon
+    healthCheckPath: /healthz
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: INTERNAL_GATEWAY_PORT
+        value: "18789"
+      - key: CLAWDBOT_STATE_DIR
+        value: /data/.clawdbot
+      - key: CLAWDBOT_WORKSPACE_DIR
+        value: /data/workspace
+      - key: RENDER_SETUP_PASSWORD
+        sync: false
+      - key: RENDER_GATEWAY_TOKEN
+        generateValue: true
