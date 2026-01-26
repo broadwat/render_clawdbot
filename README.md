@@ -9,6 +9,12 @@ This repo deploys **Clawdbot** on **Render** with:
 - Persistent state via a **Render Persistent Disk** mounted at `/data`
 - **Export + Import backups** to migrate between deployments
 
+## UI preview
+
+<img src="public/UI%20-1.png" alt="Clawdbot on Render UI (preview 1)" width="900" />
+
+<img src="public/UI%20-%202%20.png" alt="Clawdbot on Render UI (preview 2)" width="900" />
+
 ## Deploy on Render (Blueprint)
 
 **Plan requirement:** This Blueprint is intended to run on Render’s **Standard** plan (paid). It uses a **persistent disk** at `/data`, which requires a paid service. Review Render pricing before deploying: `https://docs.render.com/pricing#services`.
@@ -59,12 +65,6 @@ Optional (gateway startup tolerance):
 ## Control UI token
 
 The gateway is protected by a token. The wrapper auto-redirects `/` and `/clawdbot` to include `?token=...` so the Control UI can connect reliably.
-
-## Screenshots
-
-<img src="public/UI%20-1.png" alt="Clawdbot on Render UI (screenshot 1)" width="900" />
-
-<img src="public/UI%20-%202%20.png" alt="Clawdbot on Render UI (screenshot 2)" width="900" />
 
 ## Troubleshooting
 
