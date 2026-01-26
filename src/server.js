@@ -900,6 +900,27 @@ function stripProxyHeaders(req) {
 const proxy = httpProxy.createProxyServer({ target: GATEWAY_TARGET, ws: true, xfwd: false });
 proxy.on("error", (err, _req, _res) => console.error("[proxy]", err));
 
+// WebSocket connections can be long-lived. Some hosting stacks may drop "idle" TCP connections.
+// Keep sockets alive and disable timeouts to reduce unexpected disconnects.
+const WS_KEEPALIVE_MS = Number.parseInt(process.env.WS_KEEPALIVE_MS ?? "30000", 10);
+
+function hardenSocketForWs(sock) {
+  try {
+    // Disable inactivity timeout (Node defaults can close idle sockets).
+    sock.setTimeout(0);
+    // Lower latency; helps with small WS frames.
+    sock.setNoDelay(true);
+    // Enable TCP keepalive probes.
+    sock.setKeepAlive(true, WS_KEEPALIVE_MS);
+  } catch {
+    // ignore
+  }
+}
+
+proxy.on("open", (proxySocket) => {
+  hardenSocketForWs(proxySocket);
+});
+
 function isHtmlRequest(req) {
   const accept = String(req.headers.accept || "").toLowerCase();
   // Browsers typically send Accept including text/html for navigations.
@@ -960,6 +981,7 @@ server.on("upgrade", async (req, socket, head) => {
     return void socket.destroy();
   }
   stripProxyHeaders(req);
+  hardenSocketForWs(socket);
   proxy.ws(req, socket, head, { target: GATEWAY_TARGET });
 });
 
