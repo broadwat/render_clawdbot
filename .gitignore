@@ -3,7 +3,7 @@ node_modules/
 npm-debug.log*
 
 # local state/workspace (Render disk mount is /data in production)
-.clawdbot/
+.moltbot/
 workspace/
 data/
 

@@ -25,20 +25,20 @@ const HAS_RENDER_DISK = (() => {
 })();
 
 const STATE_DIR =
-  process.env.CLAWDBOT_STATE_DIR?.trim() ||
-  (HAS_RENDER_DISK ? path.join(DATA_MOUNT, ".clawdbot") : path.join(os.homedir(), ".clawdbot"));
+  process.env.MOLTBOT_STATE_DIR?.trim() ||
+  (HAS_RENDER_DISK ? path.join(DATA_MOUNT, ".moltbot") : path.join(os.homedir(), ".moltbot"));
 
 const WORKSPACE_DIR =
-  process.env.CLAWDBOT_WORKSPACE_DIR?.trim() ||
+  process.env.MOLTBOT_WORKSPACE_DIR?.trim() ||
   (HAS_RENDER_DISK ? path.join(DATA_MOUNT, "workspace") : path.join(STATE_DIR, "workspace"));
 
 // Protect /install with a user-provided password.
 const SETUP_PASSWORD = (process.env.RENDER_SETUP_PASSWORD || process.env.SETUP_PASSWORD || "").trim() || null;
 
-// Gateway admin token (protects Clawdbot gateway + Control UI).
+// Gateway admin token (protects Moltbot gateway + Control UI).
 // Must be stable across restarts. If not provided via env, persist it in the state dir.
 function resolveGatewayToken() {
-  const envTok = (process.env.RENDER_GATEWAY_TOKEN || process.env.CLAWDBOT_GATEWAY_TOKEN || "").trim();
+  const envTok = (process.env.RENDER_GATEWAY_TOKEN || process.env.MOLTBOT_GATEWAY_TOKEN || "").trim();
   if (envTok) return envTok;
 
   const tokenPath = path.join(STATE_DIR, "gateway.token");
@@ -59,8 +59,8 @@ function resolveGatewayToken() {
   return generated;
 }
 
-const CLAWDBOT_GATEWAY_TOKEN = resolveGatewayToken();
-process.env.CLAWDBOT_GATEWAY_TOKEN = CLAWDBOT_GATEWAY_TOKEN;
+const MOLTBOT_GATEWAY_TOKEN = resolveGatewayToken();
+process.env.MOLTBOT_GATEWAY_TOKEN = MOLTBOT_GATEWAY_TOKEN;
 
 // Where the gateway will listen internally (we proxy to it).
 const INTERNAL_GATEWAY_PORT = Number.parseInt(process.env.INTERNAL_GATEWAY_PORT ?? "18789", 10);
@@ -76,7 +76,7 @@ const PUBLIC_DIR = path.join(process.cwd(), "public");
 const RENDER_LOGO_FILE = (process.env.RENDER_LOGO_FILE || "Render logo - Black.jpg").trim();
 const RENDER_LOGO_PATH = path.join(PUBLIC_DIR, RENDER_LOGO_FILE);
 const RENDER_DEPLOY_URL =
-  (process.env.RENDER_DEPLOY_URL || "https://render.com/deploy?repo=https://github.com/ojusave/clawdbot").trim();
+  (process.env.RENDER_DEPLOY_URL || "https://render.com/deploy?repo=https://github.com/ojusave/render_clawdbot").trim();
 const RENDER_LOGO_URL = (() => {
   try {
     if (!fs.existsSync(RENDER_LOGO_PATH)) return null;
@@ -87,15 +87,15 @@ const RENDER_LOGO_URL = (() => {
 })();
 
 // Always run the built-from-source CLI entry directly to avoid PATH/global-install mismatches.
-const CLAWDBOT_ENTRY = process.env.CLAWDBOT_ENTRY?.trim() || "/clawdbot/dist/entry.js";
-const CLAWDBOT_NODE = process.env.CLAWDBOT_NODE?.trim() || "node";
+const MOLTBOT_ENTRY = process.env.MOLTBOT_ENTRY?.trim() || "/moltbot/dist/entry.js";
+const MOLTBOT_NODE = process.env.MOLTBOT_NODE?.trim() || "node";
 
-function clawArgs(args) {
-  return [CLAWDBOT_ENTRY, ...args];
+function moltArgs(args) {
+  return [MOLTBOT_ENTRY, ...args];
 }
 
 function configPath() {
-  return process.env.CLAWDBOT_CONFIG_PATH?.trim() || path.join(STATE_DIR, "clawdbot.json");
+  return process.env.MOLTBOT_CONFIG_PATH?.trim() || path.join(STATE_DIR, "moltbot.json");
 }
 
 function isConfigured() {
@@ -155,15 +155,15 @@ async function startGateway() {
     "--auth",
     "token",
     "--token",
-    CLAWDBOT_GATEWAY_TOKEN,
+    MOLTBOT_GATEWAY_TOKEN,
   ];
 
-  gatewayProc = childProcess.spawn(CLAWDBOT_NODE, clawArgs(args), {
+  gatewayProc = childProcess.spawn(MOLTBOT_NODE, moltArgs(args), {
     stdio: "inherit",
     env: {
       ...process.env,
-      CLAWDBOT_STATE_DIR: STATE_DIR,
-      CLAWDBOT_WORKSPACE_DIR: WORKSPACE_DIR,
+      MOLTBOT_STATE_DIR: STATE_DIR,
+      MOLTBOT_WORKSPACE_DIR: WORKSPACE_DIR,
     },
   });
 
@@ -234,14 +234,14 @@ function requireInstallAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const [scheme, encoded] = header.split(" ");
   if (scheme !== "Basic" || !encoded) {
-    res.set("WWW-Authenticate", 'Basic realm="Clawdbot Install"');
+    res.set("WWW-Authenticate", 'Basic realm="Moltbot Install"');
     return res.status(401).send("Auth required");
   }
   const decoded = Buffer.from(encoded, "base64").toString("utf8");
   const idx = decoded.indexOf(":");
   const password = idx >= 0 ? decoded.slice(idx + 1) : "";
   if (password !== SETUP_PASSWORD) {
-    res.set("WWW-Authenticate", 'Basic realm="Clawdbot Install"');
+    res.set("WWW-Authenticate", 'Basic realm="Moltbot Install"');
     return res.status(401).send("Invalid password");
   }
   return next();
@@ -253,8 +253,8 @@ function runCmd(cmd, args, opts = {}) {
       ...opts,
       env: {
         ...process.env,
-        CLAWDBOT_STATE_DIR: STATE_DIR,
-        CLAWDBOT_WORKSPACE_DIR: WORKSPACE_DIR,
+        MOLTBOT_STATE_DIR: STATE_DIR,
+        MOLTBOT_WORKSPACE_DIR: WORKSPACE_DIR,
       },
     });
 
@@ -272,12 +272,12 @@ function runCmd(cmd, args, opts = {}) {
 }
 
 async function getUpstreamAuthGroups() {
-  // Mirror upstream Clawdbot wizard 1:1 by using its own option builder.
+  // Mirror upstream Moltbot wizard 1:1 by using its own option builder.
   // Falls back to a minimal list if the internal modules ever move.
   try {
-    const authProfilesMod = await import(pathToFileURL("/clawdbot/dist/agents/auth-profiles.js").href);
+    const authProfilesMod = await import(pathToFileURL("/moltbot/dist/agents/auth-profiles.js").href);
     const authChoiceOptionsMod = await import(
-      pathToFileURL("/clawdbot/dist/commands/auth-choice-options.js").href,
+      pathToFileURL("/moltbot/dist/commands/auth-choice-options.js").href,
     );
 
     const ensureAuthProfileStore = authProfilesMod.ensureAuthProfileStore;
@@ -353,7 +353,7 @@ function buildOnboardArgs(payload) {
     "--gateway-auth",
     "token",
     "--gateway-token",
-    CLAWDBOT_GATEWAY_TOKEN,
+    MOLTBOT_GATEWAY_TOKEN,
     "--flow",
     payload.flow || "quickstart",
   ];
@@ -405,9 +405,9 @@ function canRestoreFromTarPath(p) {
   // We only allow restoring into the Render disk roots we manage.
   if (!isSafeTarPath(p)) return false;
   return (
-    p === ".clawdbot" ||
+    p === ".moltbot" ||
     p === "workspace" ||
-    p.startsWith(".clawdbot/") ||
+    p.startsWith(".moltbot/") ||
     p.startsWith("workspace/")
   );
 }
@@ -440,7 +440,7 @@ app.get("/install", requireInstallAuth, (_req, res) => {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>🦞 Clawdbot Installer</title>
+  <title>🦞 Moltbot Installer</title>
   <style>
     body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 2rem auto; max-width: 1100px; padding: 0 1.25rem; }
     .card { border: 1px solid #ddd; border-radius: 12px; padding: 1.25rem; margin: 1rem 0; }
@@ -467,13 +467,13 @@ app.get("/install", requireInstallAuth, (_req, res) => {
       <a class="actionBtn" href="${RENDER_DEPLOY_URL}" target="_blank" rel="noreferrer">Deploy on Render</a>
     </div>
   </div>
-  <h1>🦞 Clawdbot Installer</h1>
+  <h1>🦞 Moltbot Installer</h1>
 
   <div class="card">
     <h2>Status</h2>
     <div id="status">Loading...</div>
     <div style="margin-top: 0.75rem">
-      <a href="/clawdbot?token=${CLAWDBOT_GATEWAY_TOKEN}" target="_blank" rel="noreferrer">Open Clawdbot UI</a>
+      <a href="/moltbot?token=${MOLTBOT_GATEWAY_TOKEN}" target="_blank" rel="noreferrer">Open Moltbot UI</a>
       &nbsp;|&nbsp;
       <a href="/install/export" target="_blank">Download backup (.tar.gz)</a>
     </div>
@@ -481,7 +481,7 @@ app.get("/install", requireInstallAuth, (_req, res) => {
 
   <div class="card">
     <h2>1) Model/auth provider</h2>
-    <p class="muted">Pick how Clawdbot should authenticate to your model provider.</p>
+    <p class="muted">Pick how Moltbot should authenticate to your model provider.</p>
     <label>Provider group</label>
     <select id="authGroup"></select>
 
@@ -553,7 +553,7 @@ app.get("/install", requireInstallAuth, (_req, res) => {
       <div style="margin-top: 0.75rem">
         <button type="submit" style="background:#0f172a">Import backup</button>
       </div>
-      <p class="muted">Import only restores <code>.clawdbot/</code> and <code>workspace/</code> into your Render disk mount.</p>
+      <p class="muted">Import only restores <code>.moltbot/</code> and <code>workspace/</code> into your Render disk mount.</p>
     </form>
   </div>
 
@@ -564,17 +564,17 @@ app.get("/install", requireInstallAuth, (_req, res) => {
 
 app.get("/install/api/status", requireInstallAuth, async (_req, res) => {
   const warnings = [];
-  const version = await runCmd(CLAWDBOT_NODE, clawArgs(["--version"]));
+  const version = await runCmd(MOLTBOT_NODE, moltArgs(["--version"]));
 
-  let clawdbotVersion = version.output.trim();
-  let clawdbotMissing = false;
+  let moltbotVersion = version.output.trim();
+  let moltbotMissing = false;
   if (version.code !== 0) {
-    clawdbotVersion = "";
-    clawdbotMissing = true;
-    warnings.push("Warning: clawdbot CLI did not run successfully (this is expected outside the container build).");
+    moltbotVersion = "";
+    moltbotMissing = true;
+    warnings.push("Warning: moltbot CLI did not run successfully (this is expected outside the container build).");
   }
 
-  const channelsHelp = await runCmd(CLAWDBOT_NODE, clawArgs(["channels", "add", "--help"]));
+  const channelsHelp = await runCmd(MOLTBOT_NODE, moltArgs(["channels", "add", "--help"]));
   const channelsHelpText = channelsHelp.output || "";
 
   const authGroups = await getUpstreamAuthGroups();
@@ -582,8 +582,8 @@ app.get("/install/api/status", requireInstallAuth, async (_req, res) => {
   res.json({
     configured: isConfigured(),
     gatewayTarget: GATEWAY_TARGET,
-    clawdbotVersion,
-    clawdbotMissing,
+    moltbotVersion,
+    moltbotMissing,
     channelsAddHelp: channelsHelpText,
     authGroups,
     warnings,
@@ -602,7 +602,7 @@ app.post("/install/api/run", requireInstallAuth, async (req, res) => {
 
     const payload = req.body || {};
     const onboardArgs = buildOnboardArgs(payload);
-    const onboard = await runCmd(CLAWDBOT_NODE, clawArgs(onboardArgs));
+    const onboard = await runCmd(MOLTBOT_NODE, moltArgs(onboardArgs));
 
     let extra = "";
     const ok = onboard.code === 0 && isConfigured();
@@ -611,20 +611,22 @@ app.post("/install/api/run", requireInstallAuth, async (req, res) => {
     if (ok) {
       // Ensure gateway token is written into config so the browser UI can authenticate reliably.
       // (We also enforce loopback bind since the wrapper proxies externally.)
-      // Newer Clawdbot builds may refuse to start unless gateway.mode is explicit.
-      await runCmd(CLAWDBOT_NODE, clawArgs(["config", "set", "gateway.mode", "local"]));
-      await runCmd(CLAWDBOT_NODE, clawArgs(["config", "set", "gateway.auth.mode", "token"]));
-      await runCmd(CLAWDBOT_NODE, clawArgs(["config", "set", "gateway.auth.token", CLAWDBOT_GATEWAY_TOKEN]));
-      await runCmd(CLAWDBOT_NODE, clawArgs(["config", "set", "gateway.bind", "loopback"]));
-      await runCmd(CLAWDBOT_NODE, clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
+      // Newer Moltbot builds may refuse to start unless gateway.mode is explicit.
+      await runCmd(MOLTBOT_NODE, moltArgs(["config", "set", "gateway.mode", "local"]));
+      await runCmd(MOLTBOT_NODE, moltArgs(["config", "set", "gateway.auth.mode", "token"]));
+      await runCmd(MOLTBOT_NODE, moltArgs(["config", "set", "gateway.auth.token", MOLTBOT_GATEWAY_TOKEN]));
+      await runCmd(MOLTBOT_NODE, moltArgs(["config", "set", "gateway.bind", "loopback"]));
+      await runCmd(MOLTBOT_NODE, moltArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
+      // Moltbot default is /clawdbot; align with wrapper’s /moltbot path.
+      await runCmd(MOLTBOT_NODE, moltArgs(["config", "set", "gateway.controlUi.basePath", "/moltbot"]));
 
-      const channelsHelp = await runCmd(CLAWDBOT_NODE, clawArgs(["channels", "add", "--help"]));
+      const channelsHelp = await runCmd(MOLTBOT_NODE, moltArgs(["channels", "add", "--help"]));
       const helpText = channelsHelp.output || "";
       const supports = (name) => helpText.includes(name);
 
       if (payload.telegramToken?.trim()) {
         if (!supports("telegram")) {
-          extra += "\n[telegram] skipped (this clawdbot build does not list telegram in `channels add --help`)\n";
+          extra += "\n[telegram] skipped (this moltbot build does not list telegram in `channels add --help`)\n";
         } else {
           const token = payload.telegramToken.trim();
           const cfgObj = {
@@ -635,10 +637,10 @@ app.post("/install/api/run", requireInstallAuth, async (req, res) => {
             streamMode: "partial",
           };
           const set = await runCmd(
-            CLAWDBOT_NODE,
-            clawArgs(["config", "set", "--json", "channels.telegram", JSON.stringify(cfgObj)]),
+            MOLTBOT_NODE,
+            moltArgs(["config", "set", "--json", "channels.telegram", JSON.stringify(cfgObj)]),
           );
-          const get = await runCmd(CLAWDBOT_NODE, clawArgs(["config", "get", "channels.telegram"]));
+          const get = await runCmd(MOLTBOT_NODE, moltArgs(["config", "get", "channels.telegram"]));
           extra += `\n[telegram config] exit=${set.code}\n${set.output || "(no output)"}`;
           extra += `\n[telegram verify] exit=${get.code}\n${get.output || "(no output)"}`;
         }
@@ -646,7 +648,7 @@ app.post("/install/api/run", requireInstallAuth, async (req, res) => {
 
       if (payload.discordToken?.trim()) {
         if (!supports("discord")) {
-          extra += "\n[discord] skipped (this clawdbot build does not list discord in `channels add --help`)\n";
+          extra += "\n[discord] skipped (this moltbot build does not list discord in `channels add --help`)\n";
         } else {
           const token = payload.discordToken.trim();
           const cfgObj = {
@@ -656,10 +658,10 @@ app.post("/install/api/run", requireInstallAuth, async (req, res) => {
             dm: { policy: "pairing" },
           };
           const set = await runCmd(
-            CLAWDBOT_NODE,
-            clawArgs(["config", "set", "--json", "channels.discord", JSON.stringify(cfgObj)]),
+            MOLTBOT_NODE,
+            moltArgs(["config", "set", "--json", "channels.discord", JSON.stringify(cfgObj)]),
           );
-          const get = await runCmd(CLAWDBOT_NODE, clawArgs(["config", "get", "channels.discord"]));
+          const get = await runCmd(MOLTBOT_NODE, moltArgs(["config", "get", "channels.discord"]));
           extra += `\n[discord config] exit=${set.code}\n${set.output || "(no output)"}`;
           extra += `\n[discord verify] exit=${get.code}\n${get.output || "(no output)"}`;
         }
@@ -667,7 +669,7 @@ app.post("/install/api/run", requireInstallAuth, async (req, res) => {
 
       if (payload.slackBotToken?.trim() || payload.slackAppToken?.trim()) {
         if (!supports("slack")) {
-          extra += "\n[slack] skipped (this clawdbot build does not list slack in `channels add --help`)\n";
+          extra += "\n[slack] skipped (this moltbot build does not list slack in `channels add --help`)\n";
         } else {
           const cfgObj = {
             enabled: true,
@@ -675,10 +677,10 @@ app.post("/install/api/run", requireInstallAuth, async (req, res) => {
             appToken: payload.slackAppToken?.trim() || undefined,
           };
           const set = await runCmd(
-            CLAWDBOT_NODE,
-            clawArgs(["config", "set", "--json", "channels.slack", JSON.stringify(cfgObj)]),
+            MOLTBOT_NODE,
+            moltArgs(["config", "set", "--json", "channels.slack", JSON.stringify(cfgObj)]),
           );
-          const get = await runCmd(CLAWDBOT_NODE, clawArgs(["config", "get", "channels.slack"]));
+          const get = await runCmd(MOLTBOT_NODE, moltArgs(["config", "get", "channels.slack"]));
           extra += `\n[slack config] exit=${set.code}\n${set.output || "(no output)"}`;
           extra += `\n[slack verify] exit=${get.code}\n${get.output || "(no output)"}`;
         }
@@ -700,7 +702,7 @@ app.post("/install/api/run", requireInstallAuth, async (req, res) => {
 app.post("/install/api/pairing/approve", requireInstallAuth, async (req, res) => {
   const { channel, code } = req.body || {};
   if (!channel || !code) return res.status(400).json({ ok: false, error: "Missing channel or code" });
-  const r = await runCmd(CLAWDBOT_NODE, clawArgs(["pairing", "approve", String(channel), String(code)]));
+  const r = await runCmd(MOLTBOT_NODE, moltArgs(["pairing", "approve", String(channel), String(code)]));
   return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: r.output });
 });
 
@@ -720,7 +722,7 @@ app.get("/install/export", requireInstallAuth, async (_req, res) => {
   res.setHeader("content-type", "application/gzip");
   res.setHeader(
     "content-disposition",
-    `attachment; filename="render-clawdbot-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.tar.gz"`,
+    `attachment; filename="render-moltbot-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.tar.gz"`,
   );
 
   // Prefer exporting from /data so archives are easy to restore on Render.
@@ -766,7 +768,7 @@ app.post("/install/api/import", requireInstallAuth, async (req, res) => {
 
   const bb = Busboy({ headers: req.headers, limits: { files: 1, fileSize: 250 * 1024 * 1024 } });
 
-  const tmpDir = path.join(os.tmpdir(), "render-clawdbot");
+  const tmpDir = path.join(os.tmpdir(), "render-moltbot");
   fs.mkdirSync(tmpDir, { recursive: true });
   const tmpFile = path.join(tmpDir, `backup-${Date.now()}-${crypto.randomBytes(6).toString("hex")}.tar.gz`);
 
@@ -809,7 +811,7 @@ app.post("/install/api/import", requireInstallAuth, async (req, res) => {
 
       // Apply immediately.
       if (isConfigured()) await restartGateway();
-      return res.type("text/plain").send("OK - imported backup into /data (.clawdbot + workspace).");
+      return res.type("text/plain").send("OK - imported backup into /data (.moltbot + workspace).");
     } catch (err) {
       console.error("[import]", err);
       return res.status(500).type("text/plain").send(`Import failed: ${String(err)}`);
@@ -832,7 +834,7 @@ function landingHtml() {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Clawdbot on Render</title>
+  <title>Moltbot on Render</title>
   <style>
     body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin: 2rem auto; max-width: 1100px; padding: 0 1.25rem; }
     .card { border: 1px solid #ddd; border-radius: 12px; padding: 1.25rem; margin: 1rem 0; }
@@ -855,14 +857,14 @@ function landingHtml() {
       <a class="actionBtn" href="${RENDER_DEPLOY_URL}" target="_blank" rel="noreferrer">Deploy on Render</a>
     </div>
   </div>
-  <h1>Clawdbot on Render</h1>
+  <h1>Moltbot on Render</h1>
   <div class="card">
     <p class="muted">Wrapper status: <strong>${installed ? "installed" : "not installed"}</strong></p>
     <p class="muted">State dir: <code>${STATE_DIR}</code><br/>Workspace dir: <code>${WORKSPACE_DIR}</code></p>
     <p>
       ${
         installed
-          ? `<a class="button" href="/clawdbot?token=${CLAWDBOT_GATEWAY_TOKEN}" rel="noreferrer">Open Clawdbot UI</a>`
+          ? `<a class="button" href="/moltbot?token=${MOLTBOT_GATEWAY_TOKEN}" rel="noreferrer">Open Moltbot UI</a>`
           : `<a class="button" href="/install">Open Installer</a>`
       }
     </p>
@@ -984,8 +986,8 @@ function isHtmlRequest(req) {
 function buildTokenizedDashboardUrl(req) {
   const u = new URL(`http://_/${req.originalUrl.replace(/^\//, "")}`);
   // Always send users to the dashboard route.
-  u.pathname = "/clawdbot";
-  u.searchParams.set("token", CLAWDBOT_GATEWAY_TOKEN);
+  u.pathname = "/moltbot";
+  u.searchParams.set("token", MOLTBOT_GATEWAY_TOKEN);
   return u.pathname + u.search;
 }
 
@@ -1008,9 +1010,9 @@ app.use(async (req, res) => {
 
   // If user hits the UI without the right token, redirect to the correct tokenized URL.
   // This prevents "token_mismatch" loops caused by stale/wrong tokens in the browser.
-  if ((req.path === "/" || req.path === "/clawdbot") && isHtmlRequest(req)) {
+  if ((req.path === "/" || req.path === "/moltbot") && isHtmlRequest(req)) {
     const provided = typeof req.query.token === "string" ? req.query.token.trim() : "";
-    if (!provided || provided !== CLAWDBOT_GATEWAY_TOKEN) {
+    if (!provided || provided !== MOLTBOT_GATEWAY_TOKEN) {
       return res.redirect(302, buildTokenizedDashboardUrl(req));
     }
   }
@@ -1022,7 +1024,7 @@ const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`[wrapper] listening on :${PORT}`);
   console.log(`[wrapper] state dir: ${STATE_DIR}`);
   console.log(`[wrapper] workspace dir: ${WORKSPACE_DIR}`);
-  console.log(`[wrapper] gateway token: ${CLAWDBOT_GATEWAY_TOKEN ? "(set)" : "(missing)"}`);
+  console.log(`[wrapper] gateway token: ${MOLTBOT_GATEWAY_TOKEN ? "(set)" : "(missing)"}`);
   console.log(`[wrapper] gateway target: ${GATEWAY_TARGET}`);
   if (!SETUP_PASSWORD) console.warn("[wrapper] WARNING: RENDER_SETUP_PASSWORD is not set; /install will error.");
 });

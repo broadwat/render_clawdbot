@@ -1,7 +1,7 @@
-# Build Clawdbot from source to avoid npm packaging gaps (some build artifacts are not published).
-FROM node:22-bookworm AS clawdbot-build
+# Build Moltbot from source to avoid npm packaging gaps (some build artifacts are not published).
+FROM node:22-bookworm AS moltbot-build
 
-# Dependencies needed for Clawdbot build
+# Dependencies needed for Moltbot build
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     git \
@@ -12,21 +12,21 @@ RUN apt-get update \
     g++ \
   && rm -rf /var/lib/apt/lists/*
 
-# Install Bun (Clawdbot build uses it)
+# Install Bun (Moltbot build uses it)
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
 RUN corepack enable
 
-WORKDIR /clawdbot
+WORKDIR /moltbot
 
 # Pin to a known ref (tag/branch/commit). Defaults to main branch.
 # If main branch has dependency issues, try a specific commit hash or tag.
-ARG CLAWDBOT_GIT_REF=main
-RUN git clone --depth 50 https://github.com/clawdbot/clawdbot.git . \
-  && git checkout "${CLAWDBOT_GIT_REF}" 2>/dev/null || git checkout main
+ARG MOLTBOT_GIT_REF=main
+RUN git clone --depth 50 https://github.com/moltbot/moltbot.git . \
+  && git checkout "${MOLTBOT_GIT_REF}" 2>/dev/null || git checkout main
 
-# Ensure pnpm links workspace packages (avoid fetching clawdbot from npm).
+# Ensure pnpm links workspace packages (avoid fetching moltbot from npm).
 # This is safer than rewriting package.json (which can accidentally change other keys like "bin").
 RUN printf "link-workspace-packages=true\nprefer-workspace-packages=true\n" >> .npmrc
 
@@ -37,7 +37,7 @@ RUN find . -name "package.json" -type f -exec sed -i 's/7\.0\.0-dev\.20260125\.1
 # Install dependencies. Allow lockfile updates if package.json has changed.
 RUN pnpm install --no-frozen-lockfile
 RUN pnpm build
-ENV CLAWDBOT_PREFER_PNPM=1
+ENV MOLTBOT_PREFER_PNPM=1
 RUN pnpm ui:install && pnpm ui:build
 
 
@@ -56,12 +56,12 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev && npm cache clean --force
 
-# Copy built Clawdbot
-COPY --from=clawdbot-build /clawdbot /clawdbot
+# Copy built Moltbot
+COPY --from=moltbot-build /moltbot /moltbot
 
-# Provide a clawdbot executable
-RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /clawdbot/dist/entry.js "$@"' > /usr/local/bin/clawdbot \
-  && chmod +x /usr/local/bin/clawdbot
+# Provide a moltbot executable
+RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /moltbot/dist/entry.js "$@"' > /usr/local/bin/moltbot \
+  && chmod +x /usr/local/bin/moltbot
 
 COPY src ./src
 COPY public ./public

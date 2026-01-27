@@ -58,9 +58,9 @@
   function refreshStatus() {
     setStatus('Loading...');
     return httpJson('/install/api/status').then(function (j) {
-      var ver = j.clawdbotVersion ? (' | ' + j.clawdbotVersion) : '';
-      var note = j.clawdbotMissing ? ' (clawdbot binary missing in this environment)' : '';
-      setStatus((j.configured ? 'Installed - open /clawdbot' : 'Not installed - run installer below') + ver + note);
+      var ver = j.moltbotVersion ? (' | ' + j.moltbotVersion) : '';
+      var note = j.moltbotMissing ? ' (moltbot binary missing in this environment)' : '';
+      setStatus((j.configured ? 'Installed - open /moltbot' : 'Not installed - run installer below') + ver + note);
       renderAuth(j.authGroups || []);
       if (j.warnings && j.warnings.length) {
         for (var i = 0; i < j.warnings.length; i++) {
