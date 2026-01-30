@@ -25,20 +25,27 @@ const HAS_RENDER_DISK = (() => {
 })();
 
 const STATE_DIR =
+  process.env.OPENCLAW_STATE_DIR?.trim() ||
   process.env.MOLTBOT_STATE_DIR?.trim() ||
-  (HAS_RENDER_DISK ? path.join(DATA_MOUNT, ".moltbot") : path.join(os.homedir(), ".moltbot"));
+  (HAS_RENDER_DISK ? path.join(DATA_MOUNT, ".openclaw") : path.join(os.homedir(), ".openclaw"));
 
 const WORKSPACE_DIR =
+  process.env.OPENCLAW_WORKSPACE_DIR?.trim() ||
   process.env.MOLTBOT_WORKSPACE_DIR?.trim() ||
   (HAS_RENDER_DISK ? path.join(DATA_MOUNT, "workspace") : path.join(STATE_DIR, "workspace"));
 
 // Protect /install with a user-provided password.
 const SETUP_PASSWORD = (process.env.RENDER_SETUP_PASSWORD || process.env.SETUP_PASSWORD || "").trim() || null;
 
-// Gateway admin token (protects Moltbot gateway + Control UI).
+// Gateway admin token (protects OpenClaw gateway + Control UI).
 // Must be stable across restarts. If not provided via env, persist it in the state dir.
 function resolveGatewayToken() {
-  const envTok = (process.env.RENDER_GATEWAY_TOKEN || process.env.MOLTBOT_GATEWAY_TOKEN || "").trim();
+  const envTok = (
+    process.env.RENDER_GATEWAY_TOKEN ||
+    process.env.OPENCLAW_GATEWAY_TOKEN ||
+    process.env.GATEWAY_TOKEN ||
+    ""
+  ).trim();
   if (envTok) return envTok;
 
   const tokenPath = path.join(STATE_DIR, "gateway.token");
@@ -59,8 +66,9 @@ function resolveGatewayToken() {
   return generated;
 }
 
-const MOLTBOT_GATEWAY_TOKEN = resolveGatewayToken();
-process.env.MOLTBOT_GATEWAY_TOKEN = MOLTBOT_GATEWAY_TOKEN;
+const GATEWAY_TOKEN = resolveGatewayToken();
+process.env.OPENCLAW_GATEWAY_TOKEN = GATEWAY_TOKEN;
+process.env.GATEWAY_TOKEN = GATEWAY_TOKEN;
 
 // Where the gateway will listen internally (we proxy to it).
 const INTERNAL_GATEWAY_PORT = Number.parseInt(process.env.INTERNAL_GATEWAY_PORT ?? "18789", 10);
@@ -87,15 +95,20 @@ const RENDER_LOGO_URL = (() => {
 })();
 
 // Always run the built-from-source CLI entry directly to avoid PATH/global-install mismatches.
-const MOLTBOT_ENTRY = process.env.MOLTBOT_ENTRY?.trim() || "/moltbot/dist/entry.js";
-const MOLTBOT_NODE = process.env.MOLTBOT_NODE?.trim() || "node";
+const OPENCLAW_ENTRY =
+  process.env.OPENCLAW_ENTRY?.trim() || process.env.MOLTBOT_ENTRY?.trim() || "/openclaw/dist/entry.js";
+const OPENCLAW_NODE = process.env.OPENCLAW_NODE?.trim() || process.env.OPENCLAW_NODE?.trim() || "node";
 
-function moltArgs(args) {
-  return [MOLTBOT_ENTRY, ...args];
+function openclawArgs(args) {
+  return [OPENCLAW_ENTRY, ...args];
 }
 
 function configPath() {
-  return process.env.MOLTBOT_CONFIG_PATH?.trim() || path.join(STATE_DIR, "moltbot.json");
+  return (
+    process.env.OPENCLAW_CONFIG_PATH?.trim() ||
+    process.env.MOLTBOT_CONFIG_PATH?.trim() ||
+    path.join(STATE_DIR, "openclaw.json")
+  );
 }
 
 function isConfigured() {
@@ -155,13 +168,15 @@ async function startGateway() {
     "--auth",
     "token",
     "--token",
-    MOLTBOT_GATEWAY_TOKEN,
+    GATEWAY_TOKEN,
   ];
 
-  gatewayProc = childProcess.spawn(MOLTBOT_NODE, moltArgs(args), {
+  gatewayProc = childProcess.spawn(OPENCLAW_NODE, openclawArgs(args), {
     stdio: "inherit",
     env: {
       ...process.env,
+      OPENCLAW_STATE_DIR: STATE_DIR,
+      OPENCLAW_WORKSPACE_DIR: WORKSPACE_DIR,
       MOLTBOT_STATE_DIR: STATE_DIR,
       MOLTBOT_WORKSPACE_DIR: WORKSPACE_DIR,
     },
@@ -234,14 +249,14 @@ function requireInstallAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const [scheme, encoded] = header.split(" ");
   if (scheme !== "Basic" || !encoded) {
-    res.set("WWW-Authenticate", 'Basic realm="Moltbot Install"');
+    res.set("WWW-Authenticate", 'Basic realm="OpenClaw Install"');
     return res.status(401).send("Auth required");
   }
   const decoded = Buffer.from(encoded, "base64").toString("utf8");
   const idx = decoded.indexOf(":");
   const password = idx >= 0 ? decoded.slice(idx + 1) : "";
   if (password !== SETUP_PASSWORD) {
-    res.set("WWW-Authenticate", 'Basic realm="Moltbot Install"');
+    res.set("WWW-Authenticate", 'Basic realm="OpenClaw Install"');
     return res.status(401).send("Invalid password");
   }
   return next();
@@ -253,6 +268,8 @@ function runCmd(cmd, args, opts = {}) {
       ...opts,
       env: {
         ...process.env,
+        OPENCLAW_STATE_DIR: STATE_DIR,
+        OPENCLAW_WORKSPACE_DIR: WORKSPACE_DIR,
         MOLTBOT_STATE_DIR: STATE_DIR,
         MOLTBOT_WORKSPACE_DIR: WORKSPACE_DIR,
       },
@@ -275,9 +292,9 @@ async function getUpstreamAuthGroups() {
   // Mirror upstream Moltbot wizard 1:1 by using its own option builder.
   // Falls back to a minimal list if the internal modules ever move.
   try {
-    const authProfilesMod = await import(pathToFileURL("/moltbot/dist/agents/auth-profiles.js").href);
+    const authProfilesMod = await import(pathToFileURL("/openclaw/dist/agents/auth-profiles.js").href);
     const authChoiceOptionsMod = await import(
-      pathToFileURL("/moltbot/dist/commands/auth-choice-options.js").href,
+      pathToFileURL("/openclaw/dist/commands/auth-choice-options.js").href,
     );
 
     const ensureAuthProfileStore = authProfilesMod.ensureAuthProfileStore;
@@ -353,7 +370,7 @@ function buildOnboardArgs(payload) {
     "--gateway-auth",
     "token",
     "--gateway-token",
-    MOLTBOT_GATEWAY_TOKEN,
+    GATEWAY_TOKEN,
     "--flow",
     payload.flow || "quickstart",
   ];
@@ -361,7 +378,7 @@ function buildOnboardArgs(payload) {
   if (payload.authChoice) {
     args.push("--auth-choice", payload.authChoice);
 
-    // Map authChoice -> CLI flag for API-key–based providers. Keep in sync with moltbot
+    // Map authChoice -> CLI flag for API-key–based providers. Keep in sync with OpenClaw
     // register.onboard (--auth-choice / --*-api-key) and onboard-non-interactive/local/auth-choice.
     const secret = (payload.authSecret || "").trim();
     const map = {
@@ -407,8 +424,10 @@ function canRestoreFromTarPath(p) {
   // We only allow restoring into the Render disk roots we manage.
   if (!isSafeTarPath(p)) return false;
   return (
+    p === ".openclaw" ||
     p === ".moltbot" ||
     p === "workspace" ||
+    p.startsWith(".openclaw/") ||
     p.startsWith(".moltbot/") ||
     p.startsWith("workspace/")
   );
@@ -442,8 +461,8 @@ app.get("/install", requireInstallAuth, (_req, res) => {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>🦞 Moltbot Installer — Clawdbot on Render</title>
-  <meta name="description" content="Moltbot — The AI that actually does things. Deploy on Render with installer and Control UI." />
+  <title>🦞 OpenClaw Installer on Render</title>
+  <meta name="description" content="OpenClaw — Your own personal AI assistant. Deploy on Render with installer and Control UI." />
   <style>
     :root {
       --bg-deep: #050810;
@@ -490,14 +509,14 @@ app.get("/install", requireInstallAuth, (_req, res) => {
       <a class="actionBtn" href="${RENDER_DEPLOY_URL}" target="_blank" rel="noreferrer">Deploy on Render</a>
     </div>
   </div>
-  <h1>🦞 Moltbot Installer</h1>
-  <p class="tagline">The AI that actually does things. Configure Clawdbot on Render.</p>
+  <h1>🦞 OpenClaw Installer</h1>
+  <p class="tagline">Your own personal AI assistant. Configure OpenClaw on Render.</p>
 
   <div class="card">
     <h2>Status</h2>
     <div id="status">Loading...</div>
     <div style="margin-top: 0.75rem">
-      <a href="/moltbot?token=${MOLTBOT_GATEWAY_TOKEN}" target="_blank" rel="noreferrer">Open Control UI</a>
+      <a href="/openclaw?token=${GATEWAY_TOKEN}" target="_blank" rel="noreferrer">Open Control UI</a>
       &nbsp;|&nbsp;
       <a href="/install/export" target="_blank">Download backup (.tar.gz)</a>
     </div>
@@ -505,7 +524,7 @@ app.get("/install", requireInstallAuth, (_req, res) => {
 
   <div class="card">
     <h2>1) Model/auth provider</h2>
-    <p class="muted">Pick how Moltbot should authenticate to your model provider.</p>
+    <p class="muted">Pick how OpenClaw should authenticate to your model provider.</p>
     <label>Provider group</label>
     <select id="authGroup"></select>
 
@@ -528,7 +547,7 @@ app.get("/install", requireInstallAuth, (_req, res) => {
 
   <div class="card">
     <h2>2) Optional: Channels</h2>
-    <p class="muted">You can add channels later. These are just shortcuts if you want bots wired up immediately. WhatsApp, Google Chat, Signal, and more: add via Control UI or <code>moltbot channels add</code> after install.</p>
+    <p class="muted">You can add channels later. These are just shortcuts if you want bots wired up immediately. WhatsApp, Google Chat, Signal, and more: add via Control UI or <code>openclaw channels add</code> after install.</p>
     <p class="muted" style="margin-top: 0.5rem"><button type="button" id="channelHelpBtn" style="padding: 0.4rem 0.8rem; font-size: 0.85rem; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 6px; color: var(--cyan-bright); cursor: pointer;">Show channel add --help</button> (writes CLI help to log below)</p>
     <div class="row">
       <div>
@@ -571,14 +590,14 @@ app.get("/install", requireInstallAuth, (_req, res) => {
   </div>
 
   <div class="card">
-    <h2>After install — more from Moltbot</h2>
+    <h2>After install — more from OpenClaw</h2>
     <p class="muted">Channels, skills, and config you can add after setup:</p>
     <ul style="margin: 0.5rem 0; padding-left: 1.25rem; color: var(--text-secondary);">
-      <li><strong>Channels</strong> — WhatsApp, Google Chat, Signal, iMessage, MS Teams, Matrix, and more: use Control UI or <code>moltbot channels add --channel &lt;name&gt;</code>. <a href="https://docs.molt.bot/channels" target="_blank" rel="noreferrer">Channels docs</a></li>
-      <li><strong>More model providers</strong> — Cerebras, Groq, xAI, Mistral, etc. are supported via env vars (e.g. <code>CEREBRAS_API_KEY</code>, <code>GROQ_API_KEY</code>) or <code>models.providers</code> in config. Set them in Render Environment or after install. <a href="https://docs.molt.bot/concepts/model-providers" target="_blank" rel="noreferrer">Model providers</a></li>
+      <li><strong>Channels</strong> — WhatsApp, Google Chat, Signal, iMessage, MS Teams, Matrix, and more: use Control UI or <code>openclaw channels add --channel &lt;name&gt;</code>. <a href="https://docs.openclaw.ai/channels" target="_blank" rel="noreferrer">Channels docs</a></li>
+      <li><strong>More model providers</strong> — Cerebras, Groq, xAI, Mistral, etc. are supported via env vars (e.g. <code>CEREBRAS_API_KEY</code>, <code>GROQ_API_KEY</code>) or <code>models.providers</code> in config. Set them in Render Environment or after install. <a href="https://docs.openclaw.ai/concepts/model-providers" target="_blank" rel="noreferrer">Model providers</a></li>
       <li><strong>Skills</strong> — Install from <a href="https://clawdhub.com" target="_blank" rel="noreferrer">ClawdHub</a> or via the Control UI.</li>
-      <li><strong>Doctor</strong> — Run <code>moltbot doctor</code> (or use the Run doctor button above) for migrations and config checks. <a href="https://docs.molt.bot/gateway/doctor" target="_blank" rel="noreferrer">Doctor docs</a></li>
-      <li><strong>Configuration</strong> — Full config reference: <a href="https://docs.molt.bot/gateway/configuration" target="_blank" rel="noreferrer">Configuration</a></li>
+      <li><strong>Doctor</strong> — Run <code>openclaw doctor</code> (or use the Run doctor button above) for migrations and config checks. <a href="https://docs.openclaw.ai/gateway/doctor" target="_blank" rel="noreferrer">Doctor docs</a></li>
+      <li><strong>Configuration</strong> — Full config reference: <a href="https://docs.openclaw.ai/gateway/configuration" target="_blank" rel="noreferrer">Configuration</a></li>
     </ul>
   </div>
 
@@ -591,7 +610,7 @@ app.get("/install", requireInstallAuth, (_req, res) => {
       <div style="margin-top: 0.75rem">
         <button type="submit" style="background:#0f172a">Import backup</button>
       </div>
-      <p class="muted">Import only restores <code>.moltbot/</code> and <code>workspace/</code> into your Render disk mount.</p>
+      <p class="muted">Import only restores <code>.openclaw/</code> and <code>workspace/</code> into your Render disk mount.</p>
     </form>
   </div>
 
@@ -602,17 +621,17 @@ app.get("/install", requireInstallAuth, (_req, res) => {
 
 app.get("/install/api/status", requireInstallAuth, async (_req, res) => {
   const warnings = [];
-  const version = await runCmd(MOLTBOT_NODE, moltArgs(["--version"]));
+  const version = await runCmd(OPENCLAW_NODE, openclawArgs(["--version"]));
 
-  let moltbotVersion = version.output.trim();
-  let moltbotMissing = false;
+  let openclawVersion = version.output.trim();
+  let openclawMissing = false;
   if (version.code !== 0) {
-    moltbotVersion = "";
-    moltbotMissing = true;
-    warnings.push("Warning: moltbot CLI did not run successfully (this is expected outside the container build).");
+    openclawVersion = "";
+    openclawMissing = true;
+    warnings.push("Warning: openclaw CLI did not run successfully (this is expected outside the container build).");
   }
 
-  const channelsHelp = await runCmd(MOLTBOT_NODE, moltArgs(["channels", "add", "--help"]));
+  const channelsHelp = await runCmd(OPENCLAW_NODE, openclawArgs(["channels", "add", "--help"]));
   const channelsHelpText = channelsHelp.output || "";
 
   const authGroups = await getUpstreamAuthGroups();
@@ -620,8 +639,8 @@ app.get("/install/api/status", requireInstallAuth, async (_req, res) => {
   res.json({
     configured: isConfigured(),
     gatewayTarget: GATEWAY_TARGET,
-    moltbotVersion,
-    moltbotMissing,
+    openclawVersion: openclawVersion,
+    openclawMissing: openclawMissing,
     channelsAddHelp: channelsHelpText,
     authGroups,
     warnings,
@@ -640,7 +659,7 @@ app.post("/install/api/run", requireInstallAuth, async (req, res) => {
 
     const payload = req.body || {};
     const onboardArgs = buildOnboardArgs(payload);
-    const onboard = await runCmd(MOLTBOT_NODE, moltArgs(onboardArgs));
+    const onboard = await runCmd(OPENCLAW_NODE, openclawArgs(onboardArgs));
 
     let extra = "";
     const ok = onboard.code === 0 && isConfigured();
@@ -650,21 +669,20 @@ app.post("/install/api/run", requireInstallAuth, async (req, res) => {
       // Ensure gateway token is written into config so the browser UI can authenticate reliably.
       // (We also enforce loopback bind since the wrapper proxies externally.)
       // Newer Moltbot builds may refuse to start unless gateway.mode is explicit.
-      await runCmd(MOLTBOT_NODE, moltArgs(["config", "set", "gateway.mode", "local"]));
-      await runCmd(MOLTBOT_NODE, moltArgs(["config", "set", "gateway.auth.mode", "token"]));
-      await runCmd(MOLTBOT_NODE, moltArgs(["config", "set", "gateway.auth.token", MOLTBOT_GATEWAY_TOKEN]));
-      await runCmd(MOLTBOT_NODE, moltArgs(["config", "set", "gateway.bind", "loopback"]));
-      await runCmd(MOLTBOT_NODE, moltArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
-      // Moltbot default is /clawdbot; align with wrapper’s /moltbot path.
-      await runCmd(MOLTBOT_NODE, moltArgs(["config", "set", "gateway.controlUi.basePath", "/moltbot"]));
+      await runCmd(OPENCLAW_NODE, openclawArgs(["config", "set", "gateway.mode", "local"]));
+      await runCmd(OPENCLAW_NODE, openclawArgs(["config", "set", "gateway.auth.mode", "token"]));
+      await runCmd(OPENCLAW_NODE, openclawArgs(["config", "set", "gateway.auth.token", GATEWAY_TOKEN]));
+      await runCmd(OPENCLAW_NODE, openclawArgs(["config", "set", "gateway.bind", "loopback"]));
+      await runCmd(OPENCLAW_NODE, openclawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
+      await runCmd(OPENCLAW_NODE, openclawArgs(["config", "set", "gateway.controlUi.basePath", "/openclaw"]));
 
-      const channelsHelp = await runCmd(MOLTBOT_NODE, moltArgs(["channels", "add", "--help"]));
+      const channelsHelp = await runCmd(OPENCLAW_NODE, openclawArgs(["channels", "add", "--help"]));
       const helpText = channelsHelp.output || "";
       const supports = (name) => helpText.includes(name);
 
       if (payload.telegramToken?.trim()) {
         if (!supports("telegram")) {
-          extra += "\n[telegram] skipped (this moltbot build does not list telegram in `channels add --help`)\n";
+          extra += "\n[telegram] skipped (this openclaw build does not list telegram in `channels add --help`)\n";
         } else {
           const token = payload.telegramToken.trim();
           const cfgObj = {
@@ -675,10 +693,10 @@ app.post("/install/api/run", requireInstallAuth, async (req, res) => {
             streamMode: "partial",
           };
           const set = await runCmd(
-            MOLTBOT_NODE,
-            moltArgs(["config", "set", "--json", "channels.telegram", JSON.stringify(cfgObj)]),
+            OPENCLAW_NODE,
+            openclawArgs(["config", "set", "--json", "channels.telegram", JSON.stringify(cfgObj)]),
           );
-          const get = await runCmd(MOLTBOT_NODE, moltArgs(["config", "get", "channels.telegram"]));
+          const get = await runCmd(OPENCLAW_NODE, openclawArgs(["config", "get", "channels.telegram"]));
           extra += `\n[telegram config] exit=${set.code}\n${set.output || "(no output)"}`;
           extra += `\n[telegram verify] exit=${get.code}\n${get.output || "(no output)"}`;
         }
@@ -686,7 +704,7 @@ app.post("/install/api/run", requireInstallAuth, async (req, res) => {
 
       if (payload.discordToken?.trim()) {
         if (!supports("discord")) {
-          extra += "\n[discord] skipped (this moltbot build does not list discord in `channels add --help`)\n";
+          extra += "\n[discord] skipped (this openclaw build does not list discord in `channels add --help`)\n";
         } else {
           const token = payload.discordToken.trim();
           const cfgObj = {
@@ -696,10 +714,10 @@ app.post("/install/api/run", requireInstallAuth, async (req, res) => {
             dm: { policy: "pairing" },
           };
           const set = await runCmd(
-            MOLTBOT_NODE,
-            moltArgs(["config", "set", "--json", "channels.discord", JSON.stringify(cfgObj)]),
+            OPENCLAW_NODE,
+            openclawArgs(["config", "set", "--json", "channels.discord", JSON.stringify(cfgObj)]),
           );
-          const get = await runCmd(MOLTBOT_NODE, moltArgs(["config", "get", "channels.discord"]));
+          const get = await runCmd(OPENCLAW_NODE, openclawArgs(["config", "get", "channels.discord"]));
           extra += `\n[discord config] exit=${set.code}\n${set.output || "(no output)"}`;
           extra += `\n[discord verify] exit=${get.code}\n${get.output || "(no output)"}`;
         }
@@ -707,7 +725,7 @@ app.post("/install/api/run", requireInstallAuth, async (req, res) => {
 
       if (payload.slackBotToken?.trim() || payload.slackAppToken?.trim()) {
         if (!supports("slack")) {
-          extra += "\n[slack] skipped (this moltbot build does not list slack in `channels add --help`)\n";
+          extra += "\n[slack] skipped (this openclaw build does not list slack in `channels add --help`)\n";
         } else {
           const cfgObj = {
             enabled: true,
@@ -715,10 +733,10 @@ app.post("/install/api/run", requireInstallAuth, async (req, res) => {
             appToken: payload.slackAppToken?.trim() || undefined,
           };
           const set = await runCmd(
-            MOLTBOT_NODE,
-            moltArgs(["config", "set", "--json", "channels.slack", JSON.stringify(cfgObj)]),
+            OPENCLAW_NODE,
+            openclawArgs(["config", "set", "--json", "channels.slack", JSON.stringify(cfgObj)]),
           );
-          const get = await runCmd(MOLTBOT_NODE, moltArgs(["config", "get", "channels.slack"]));
+          const get = await runCmd(OPENCLAW_NODE, openclawArgs(["config", "get", "channels.slack"]));
           extra += `\n[slack config] exit=${set.code}\n${set.output || "(no output)"}`;
           extra += `\n[slack verify] exit=${get.code}\n${get.output || "(no output)"}`;
         }
@@ -741,14 +759,14 @@ app.post("/install/api/doctor", requireInstallAuth, async (_req, res) => {
   if (!isConfigured()) {
     return res.status(400).json({ ok: false, output: "Not installed. Run the installer first." });
   }
-  const r = await runCmd(MOLTBOT_NODE, moltArgs(["doctor", "--non-interactive"]));
+  const r = await runCmd(OPENCLAW_NODE, openclawArgs(["doctor", "--non-interactive"]));
   return res.status(r.code === 0 ? 200 : 200).json({ ok: r.code === 0, output: r.output || "" });
 });
 
 app.post("/install/api/pairing/approve", requireInstallAuth, async (req, res) => {
   const { channel, code } = req.body || {};
   if (!channel || !code) return res.status(400).json({ ok: false, error: "Missing channel or code" });
-  const r = await runCmd(MOLTBOT_NODE, moltArgs(["pairing", "approve", String(channel), String(code)]));
+  const r = await runCmd(OPENCLAW_NODE, openclawArgs(["pairing", "approve", String(channel), String(code)]));
   return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: r.output });
 });
 
@@ -768,7 +786,7 @@ app.get("/install/export", requireInstallAuth, async (_req, res) => {
   res.setHeader("content-type", "application/gzip");
   res.setHeader(
     "content-disposition",
-    `attachment; filename="render-moltbot-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.tar.gz"`,
+    `attachment; filename="render-openclaw-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.tar.gz"`,
   );
 
   // Prefer exporting from /data so archives are easy to restore on Render.
@@ -814,7 +832,7 @@ app.post("/install/api/import", requireInstallAuth, async (req, res) => {
 
   const bb = Busboy({ headers: req.headers, limits: { files: 1, fileSize: 250 * 1024 * 1024 } });
 
-  const tmpDir = path.join(os.tmpdir(), "render-moltbot");
+  const tmpDir = path.join(os.tmpdir(), "render-openclaw");
   fs.mkdirSync(tmpDir, { recursive: true });
   const tmpFile = path.join(tmpDir, `backup-${Date.now()}-${crypto.randomBytes(6).toString("hex")}.tar.gz`);
 
@@ -857,7 +875,7 @@ app.post("/install/api/import", requireInstallAuth, async (req, res) => {
 
       // Apply immediately.
       if (isConfigured()) await restartGateway();
-      return res.type("text/plain").send("OK - imported backup into /data (.moltbot + workspace).");
+      return res.type("text/plain").send("OK - imported backup into /data (.openclaw + workspace).");
     } catch (err) {
       console.error("[import]", err);
       return res.status(500).type("text/plain").send(`Import failed: ${String(err)}`);
@@ -880,8 +898,8 @@ function landingHtml() {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Moltbot on Render — The AI that actually does things</title>
-  <meta name="description" content="Moltbot — The AI that actually does things. Deploy Clawdbot on Render with installer and Control UI." />
+  <title>OpenClaw on Render</title>
+  <meta name="description" content="OpenClaw — Your own personal AI assistant. Deploy on Render with installer and Control UI." />
   <style>
     :root {
       --bg-deep: #050810;
@@ -922,21 +940,21 @@ function landingHtml() {
       <a class="actionBtn" href="${RENDER_DEPLOY_URL}" target="_blank" rel="noreferrer">Deploy on Render</a>
     </div>
   </div>
-  <h1>🦞 Moltbot on Render</h1>
-  <p class="tagline">The AI that actually does things. Deploy Clawdbot with a built-in installer and Control UI.</p>
+  <h1>🦞 OpenClaw on Render</h1>
+  <p class="tagline">Your own personal AI assistant. Deploy with a built-in installer and Control UI.</p>
   <div class="card">
     <p class="muted">Wrapper status: <strong>${installed ? "installed" : "not installed"}</strong></p>
     <p class="muted">State dir: <code>${STATE_DIR}</code><br/>Workspace dir: <code>${WORKSPACE_DIR}</code></p>
     <p>
       ${
         installed
-          ? `<a class="button" href="/moltbot?token=${MOLTBOT_GATEWAY_TOKEN}" rel="noreferrer">Open Control UI</a>`
+          ? `<a class="button" href="/openclaw?token=${GATEWAY_TOKEN}" rel="noreferrer">Open Control UI</a>`
           : `<a class="button" href="/install">Open Installer</a>`
       }
     </p>
     <p class="muted">If you just deployed, go to <code>/install</code> first.</p>
     <div class="links">
-      <a href="https://docs.clawd.bot" target="_blank" rel="noreferrer">Docs</a> · <a href="https://discord.gg/clawd" target="_blank" rel="noreferrer">Discord</a> · <a href="https://github.com/moltbot/moltbot" target="_blank" rel="noreferrer">GitHub</a>
+      <a href="https://docs.openclaw.ai" target="_blank" rel="noreferrer">Docs</a> · <a href="https://discord.gg/clawd" target="_blank" rel="noreferrer">Discord</a> · <a href="https://github.com/openclaw/openclaw" target="_blank" rel="noreferrer">GitHub</a>
     </div>
   </div>
 </body>
@@ -1055,8 +1073,8 @@ function isHtmlRequest(req) {
 function buildTokenizedDashboardUrl(req) {
   const u = new URL(`http://_/${req.originalUrl.replace(/^\//, "")}`);
   // Always send users to the dashboard route.
-  u.pathname = "/moltbot";
-  u.searchParams.set("token", MOLTBOT_GATEWAY_TOKEN);
+  u.pathname = "/openclaw";
+  u.searchParams.set("token", GATEWAY_TOKEN);
   return u.pathname + u.search;
 }
 
@@ -1079,9 +1097,9 @@ app.use(async (req, res) => {
 
   // If user hits the UI without the right token, redirect to the correct tokenized URL.
   // This prevents "token_mismatch" loops caused by stale/wrong tokens in the browser.
-  if ((req.path === "/" || req.path === "/moltbot") && isHtmlRequest(req)) {
+  if ((req.path === "/" || req.path === "/openclaw") && isHtmlRequest(req)) {
     const provided = typeof req.query.token === "string" ? req.query.token.trim() : "";
-    if (!provided || provided !== MOLTBOT_GATEWAY_TOKEN) {
+    if (!provided || provided !== GATEWAY_TOKEN) {
       return res.redirect(302, buildTokenizedDashboardUrl(req));
     }
   }
@@ -1093,7 +1111,7 @@ const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`[wrapper] listening on :${PORT}`);
   console.log(`[wrapper] state dir: ${STATE_DIR}`);
   console.log(`[wrapper] workspace dir: ${WORKSPACE_DIR}`);
-  console.log(`[wrapper] gateway token: ${MOLTBOT_GATEWAY_TOKEN ? "(set)" : "(missing)"}`);
+  console.log(`[wrapper] gateway token: ${GATEWAY_TOKEN ? "(set)" : "(missing)"}`);
   console.log(`[wrapper] gateway target: ${GATEWAY_TARGET}`);
   if (!SETUP_PASSWORD) console.warn("[wrapper] WARNING: RENDER_SETUP_PASSWORD is not set; /install will error.");
 });

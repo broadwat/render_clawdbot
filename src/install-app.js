@@ -58,8 +58,8 @@
   function refreshStatus() {
     setStatus('Loading...');
     return httpJson('/install/api/status').then(function (j) {
-      var ver = j.moltbotVersion ? (' | ' + j.moltbotVersion) : '';
-      var note = j.moltbotMissing ? ' (moltbot binary missing in this environment)' : '';
+      var ver = (j.openclawVersion || j.moltbotVersion) ? (' | ' + (j.openclawVersion || j.moltbotVersion)) : '';
+      var note = (j.openclawMissing || j.moltbotMissing) ? ' (openclaw binary missing in this environment)' : '';
       setStatus((j.configured ? 'Installed — Open Control UI above' : 'Not installed — run installer below') + ver + note);
       renderAuth(j.authGroups || []);
       if (j.warnings && j.warnings.length) {
@@ -123,7 +123,7 @@
   var channelHelpBtn = document.getElementById('channelHelpBtn');
   if (channelHelpBtn) {
     channelHelpBtn.onclick = function () {
-      logEl.textContent += '\n--- moltbot channels add --help ---\n';
+      logEl.textContent += '\n--- openclaw channels add --help ---\n';
       httpJson('/install/api/status').then(function (j) {
         logEl.textContent += (j.channelsAddHelp || '(not available)') + '\n';
       }).catch(function (e) { logEl.textContent += 'Error: ' + String(e) + '\n'; });

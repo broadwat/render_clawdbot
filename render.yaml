@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: render-moltbot
+    name: render-openclaw
     runtime: docker
     plan: standard
     region: oregon
@@ -14,9 +14,9 @@ services:
         value: "8080"
       - key: INTERNAL_GATEWAY_PORT
         value: "18789"
-      - key: MOLTBOT_STATE_DIR
-        value: /data/.moltbot
-      - key: MOLTBOT_WORKSPACE_DIR
+      - key: OPENCLAW_STATE_DIR
+        value: /data/.openclaw
+      - key: OPENCLAW_WORKSPACE_DIR
         value: /data/workspace
       - key: RENDER_SETUP_PASSWORD
         sync: false
